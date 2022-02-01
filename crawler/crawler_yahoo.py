@@ -5,6 +5,8 @@ import itertools
 import datetime
 import sys
 import json
+import re
+import time
 sys.path.append("..")
 import database.database as database  # noqa
 
@@ -96,3 +98,37 @@ class yahoo:
         #     ],
         #     "refreshedTs": "2022-01-12T00:00:00+08:00" 資料時間
         # }
+
+    # {Function 紀錄收盤價}
+    # {Return bool 是否紀錄成功}
+    def record_closing(self, stock_symbol: str) -> bool:
+        url = 'https://tw.stock.yahoo.com/quote/{}/institutional-trading' \
+            .format(stock_symbol)
+        soup = BeautifulSoup(requests.get(url).text, 'lxml')
+        stock_price_html = soup.select('.Fld\(c\).Ai\(fs\) > div')
+        performance = 'up' if soup.select(
+            '.Fld\(c\).Ai\(fs\) .Ai\(fe\) .C\(\$c-trend-up\)') else 'down'
+        loop_times = 0
+        data = {}
+        for text in stock_price_html[0].stripped_strings:
+            # 第一個值是收盤價
+            if loop_times == 0:
+                data['price'] = text
+            # 第二個值是漲跌幅
+            elif loop_times == 1:
+                data['diff'] = text if performance == 'up' else '-' + text
+            # 第三個值是漲跌百分比
+            elif loop_times == 2:
+                pattern = r"([0]{1}|[1-9]{1}\d*)(\.\d+)%"
+                text = re.search(pattern, text)[0]
+                data['diff_percent'] = text if performance == 'up' else '-' + text
+            loop_times += 1
+
+        # 取收盤時間
+        close_date_html = soup.select('.Fld\(c\).Ai\(fs\) > span')
+        pattern = r"(\d{4}/\d{2}/\d{2})"
+        time_string = re.search(pattern, close_date_html[0].text)[0]
+        data['date'] = time.strftime(
+            "%Y-%m-%d",
+            time.strptime(time_string, "%Y/%m/%d")
+        )
