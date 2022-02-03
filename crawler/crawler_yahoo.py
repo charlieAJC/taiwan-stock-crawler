@@ -99,7 +99,7 @@ class yahoo:
         #     "refreshedTs": "2022-01-12T00:00:00+08:00" 資料時間
         # }
 
-    # {Function 紀錄收盤價}
+    # {Function 紀錄收盤表現}
     # {Return bool 是否紀錄成功}
     def record_closing(self, stock_symbol: str) -> bool:
         url = 'https://tw.stock.yahoo.com/quote/{}/institutional-trading' \
@@ -116,12 +116,12 @@ class yahoo:
                 data['price'] = text
             # 第二個值是漲跌幅
             elif loop_times == 1:
-                data['diff'] = text if performance == 'up' else '-' + text
+                data['change'] = text if performance == 'up' else '-' + text
             # 第三個值是漲跌百分比
             elif loop_times == 2:
                 pattern = r"([0]{1}|[1-9]{1}\d*)(\.\d+)%"
                 text = re.search(pattern, text)[0]
-                data['diff_percent'] = text if performance == 'up' else '-' + text
+                data['change_percent'] = text if performance == 'up' else '-' + text
             loop_times += 1
 
         # 取收盤時間
@@ -132,3 +132,49 @@ class yahoo:
             "%Y-%m-%d",
             time.strptime(time_string, "%Y/%m/%d")
         )
+
+        # data 預期格式
+        # {'price': '636', 'change': '-5', 'change_percent': '-0.78%', 'date': '2022-01-26'}
+        sql = 'INSERT INTO `stock_close_performance` VALUES ' + \
+            "(null,'{}','{}',{},'{}','{}') " . format(stock_symbol, data['date'], data['price'], data['change'], data['change_percent']) + \
+            'ON DUPLICATE KEY UPDATE id=id'
+        result = database.run_sql(sql)
+        if (result == False):
+            return False
+        else:
+            return True
+
+    # {Function 紀錄法人逐日買賣超}
+    # {Return bool 是否紀錄成功}
+    def record_daily_diff(self, stock_symbol: str) -> bool:
+        url = 'https://tw.stock.yahoo.com/_td-stock/api/resource/StockServices.tradesWithQuoteStats;limit=210;period=day;symbol={}' . \
+            format(stock_symbol)
+        data = json.loads(requests.get(url).text)
+        loop_times = 0
+        sql_attr = ''
+        for daily_data in data['list']:
+            if (loop_times > 0 and loop_times <= 4):
+                sql_attr += ', '
+            elif (loop_times > 4):
+                break
+            sql_attr += "(null,'{}','{}','day',{},{},{},{},'{}','{}',{})" . format(
+                stock_symbol,
+                daily_data['date'][:10],
+                daily_data['foreignDiffVolK'],
+                daily_data['investmentTrustDiffVolK'],
+                daily_data['dealerDiffVolK'],
+                daily_data['totalDiffVolK'],
+                str(daily_data['foreignHoldPercent']) + '%',
+                str(
+                    round(round(daily_data['changePercent'], 4) * 100, 2)
+                ) + '%',
+                daily_data['volumeK']
+            )
+            loop_times += 1
+        sql = 'INSERT INTO `stock_daily_performance` VALUES ' + sql_attr + \
+            ' ON DUPLICATE KEY UPDATE id=id'
+        result = database.run_sql(sql)
+        if (result == False):
+            return False
+        else:
+            return True
