@@ -37,7 +37,6 @@ class yahoo:
         times = 1
         for data in change_up_html:
             # stripped_strings 參考資料：https://www.crummy.com/software/BeautifulSoup/bs4/doc.zh/#get-text
-            # TODO: 將股號中的 .tw 移除
             stock_data.append([text for text in data.stripped_strings])
             times += 1
             if times > 10:
